@@ -159,10 +159,19 @@ class ACEBenchGenerationTask(GenerationTask):
 
     def log_example_prompt(self, data):
         """Log an example prompt for debugging."""
-        messages = format_acebench_messages(data, self.hf_tokenizer)
-        functions = data.get("function", [])
+        # data might be a list of samples, get the first one
+        if isinstance(data, list):
+            if not data:
+                LOG.warning("Empty data provided to log_example_prompt")
+                return
+            data_point = data[0]
+        else:
+            data_point = data
+            
+        messages = format_acebench_messages(data_point, self.hf_tokenizer)
+        functions = data_point.get("function", [])
         tools = convert_functions_to_tools(functions) if functions else None
-        
+
         LOG.info("Example ACEBench prompt:")
         LOG.info(f"Messages: {json.dumps(messages, indent=2)}")
         if tools:
