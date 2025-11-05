@@ -24,33 +24,31 @@ from nemo_skills.utils import get_logger_name
 
 LOG = logging.getLogger(get_logger_name(__file__))
 
-# Mapping of ACEBench data files to task types
-# Based on the actual data files and their categorization
-TASK_TYPE_MAPPING = {
-    "inference_memory": [
+# Mapping of ACEBench data files to categories
+# Based on the ACE_DATA_CATEGORY structure from agent_hard_benchmark/ACEBench
+CATEGORY_MAPPING = {
+    "normal": [
+        "data_normal_single_turn_single_function",
+        "data_normal_single_turn_parallel_function",
         "data_normal_multi_turn_user_adjust",
         "data_normal_multi_turn_user_switch",
-        "data_agent_multi_step",
-        "data_agent_multi_turn",
-    ],
-    "instruction_retention": [
-        "data_normal_preference",
         "data_normal_similar_api",
-        "data_special_error_param",
-        "data_special_incomplete",
-        "data_special_irrelevant",
-    ],
-    "reliable_version_editing": [
+        "data_normal_preference",
         "data_normal_atom_bool",
         "data_normal_atom_enum",
-        "data_normal_atom_list",
         "data_normal_atom_number",
+        "data_normal_atom_list",
         "data_normal_atom_object_deep",
         "data_normal_atom_object_short",
     ],
-    "self_coherence": [
-        "data_normal_single_turn_single_function",
-        "data_normal_single_turn_parallel_function",
+    "special": [
+        "data_special_incomplete",
+        "data_special_error_param",
+        "data_special_irrelevant",
+    ],
+    "agent": [
+        "data_agent_multi_step",
+        "data_agent_multi_turn",
     ],
 }
 
@@ -94,23 +92,23 @@ def load_question_file(file_path: Path) -> List[Dict]:
     return questions
 
 
-def process_task_type(
-    task_type: str,
+def process_category(
+    category: str,
     source_dir: Path,
     output_dir: Path,
     seed: Optional[int] = None,
 ):
-    """Process all data files for a given task type and create test.jsonl."""
-    task_output_dir = output_dir / task_type
-    task_output_dir.mkdir(parents=True, exist_ok=True)
+    """Process all data files for a given category and create test.jsonl."""
+    category_output_dir = output_dir / category
+    category_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get the list of data files for this task type
-    data_files = TASK_TYPE_MAPPING.get(task_type, [])
+    # Get the list of data files for this category
+    data_files = CATEGORY_MAPPING.get(category, [])
     if not data_files:
-        LOG.warning(f"No data files mapped for task type: {task_type}")
+        LOG.warning(f"No data files mapped for category: {category}")
         return
 
-    # Load questions from all data files for this task type
+    # Load questions from all data files for this category
     all_questions = []
     data_en_dir = source_dir / "data_all" / "data_en"
     possible_answers_dir = data_en_dir / "possible_answer"
@@ -146,11 +144,11 @@ def process_task_type(
         all_questions.extend(questions)
 
     if not all_questions:
-        LOG.warning(f"No questions found for task type: {task_type}")
+        LOG.warning(f"No questions found for category: {category}")
         return
 
     # Write to test.jsonl
-    output_file = task_output_dir / "test.jsonl"
+    output_file = category_output_dir / "test.jsonl"
     with open(output_file, "w", encoding="utf-8") as f:
         for q in all_questions:
             f.write(json.dumps(q, ensure_ascii=False) + "\n")
@@ -158,7 +156,7 @@ def process_task_type(
     LOG.info(f"Wrote {len(all_questions)} questions to {output_file}")
 
     # Write __init__.py
-    init_file = task_output_dir / "__init__.py"
+    init_file = category_output_dir / "__init__.py"
     with open(init_file, "w", encoding="utf-8") as f:
         f.write(DEFAULT_SETTINGS)
 
@@ -171,11 +169,11 @@ def main(args):
     # Output directory is the acebench dataset directory
     output_dir = Path(__file__).parent
 
-    # Process each task type
-    task_types = TASK_TYPE_MAPPING.keys()
-    for task_type in task_types:
-        LOG.info(f"Processing task type: {task_type}")
-        process_task_type(task_type, source_dir, output_dir, seed=args.seed)
+    # Process each category
+    categories = CATEGORY_MAPPING.keys()
+    for category in categories:
+        LOG.info(f"Processing category: {category}")
+        process_category(category, source_dir, output_dir, seed=args.seed)
 
     LOG.info("ACEBench dataset preparation completed")
 

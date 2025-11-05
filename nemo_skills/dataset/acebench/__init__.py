@@ -14,12 +14,11 @@
 
 DATASET_GROUP = "tool"
 
-# ACEBench task types as defined in the evaluation pipeline
+# ACEBench categories as defined in the original benchmark
 SPLITS = [
-    "inference_memory",
-    "instruction_retention",
-    "reliable_version_editing",
-    "self_coherence",
+    "normal",
+    "special",
+    "agent",
 ]
 
 IS_BENCHMARK_GROUP = True

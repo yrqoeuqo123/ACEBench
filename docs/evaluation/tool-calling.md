@@ -157,16 +157,15 @@ ns prepare_data acebench
 This command performs the following operations:
 
 - Loads ACEBench data from the source directory
-- Processes and organizes data into four task type folders
+- Processes and organizes data into three category folders (normal, special, agent)
 - Creates standardized test files in JSONL format with ground truth annotations
 
 **Example output structure**:
 ```
 nemo_skills/dataset/acebench/
-├── inference_memory/test.jsonl
-├── instruction_retention/test.jsonl
-├── reliable_version_editing/test.jsonl
-└── self_coherence/test.jsonl
+├── normal/test.jsonl
+├── special/test.jsonl
+└── agent/test.jsonl
 ```
 
 The data is organized across three primary categories:
@@ -224,8 +223,8 @@ ns eval \
 
 
 !!!note
-    To evaluate individual task types of `acebench`, such as `inference_memory`, use `benchmarks=acebench.inference_memory`.
+    To evaluate individual categories of `acebench`, such as `normal`, use `benchmarks=acebench.normal`.
 
 !!!note
-    Currently, ns summarize_results does not support benchmarks with custom aggregation requirements like ACEBench. To handle this, the evaluation pipeline automatically launches a dependent job that processes the individual task type scores using [our scoring script](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/acebench_score.py).
+    Currently, ns summarize_results does not support benchmarks with custom aggregation requirements like ACEBench. To handle this, the evaluation pipeline automatically launches a dependent job that processes the individual category scores using [our scoring script](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/acebench_score.py).
 
