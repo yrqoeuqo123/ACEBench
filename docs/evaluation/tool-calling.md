@@ -141,7 +141,7 @@ ns eval \
 
 ## acebench
 
-ACEBench consists of four distinct evaluation task types that comprehensively test various aspects of agent capabilities through function calling: inference memory, instruction retention, reliable version editing, and self-coherence.
+ACEBench categorizes data into three primary types based on evaluation methodology: **Normal**, **Special**, and **Agent**. These three categories comprehensively test various aspects of tool usage capabilities, from basic function calls to complex multi-turn interactions with imperfect instructions and real-world agent scenarios.
 
 - Benchmark is defined in [`nemo_skills/dataset/acebench/__init__.py`](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/__init__.py)
 - Original benchmark source is [here](https://github.com/chenchen0103/ACEBench).
@@ -169,6 +169,14 @@ nemo_skills/dataset/acebench/
 └── self_coherence/test.jsonl
 ```
 
+The data is organized across three primary categories:
+
+- **Normal**: Consists of fixed question-answer pairs and encompasses a variety of scenarios, including single-turn dialogues, multi-turn dialogues, and personalized scenario data. It also includes evaluations of atomic-level capabilities (bool, enum, number, list, object types).
+
+- **Special**: Includes imperfect instructions, such as instructions containing incomplete parameters, incorrectly formatted parameters, or questions irrelevant to the capabilities of the candidate functions.
+
+- **Agent**: Encompasses real-world scenarios, abstracted to construct multi-turn, multi-step tool invocation scenarios, divided into multi-turn and multi-step cases depending on whether the user participates in the dialogue process.
+
 ### Challenges of tool-calling tasks
 
 There are three key steps in tool-calling which differentiate it from typical text-only tasks:
@@ -183,10 +191,13 @@ For ACEBench, we use AST-based evaluation for response parsing and validation. M
 
 **When to use**: All ACEBench evaluations
 
-**How it works**: Utilizes AST parsing and specialized checker functions to validate function calls. The evaluation supports three checker types:
-- **Normal Checker**: For standard single-turn and multi-turn function calls
-- **Special Checker**: For error handling and edge cases  
-- **Agent Checker**: For multi-step agent tasks with sequential function calls
+**How it works**: Utilizes AST parsing and specialized checker functions to validate function calls. The evaluation supports three checker types corresponding to the three data categories:
+
+- **Normal Checker**: For Normal data, compares model function call outputs with ground truth using AST parsing. Supports cases with multiple valid answers through a candidate answer pool where matching any candidate constitutes correctness. Evaluation uses Accuracy metric (1=full match, 0=mismatch).
+
+- **Special Checker**: For Special data, primarily assesses the model's capability in problem identification. The model must: (1) detect and alert missing parameters, (2) accurately locate erroneous parameters, and (3) recognize task-function mismatches. For each case, Accuracy is scored as 1 if correctly identified, otherwise 0.
+
+- **Agent Checker**: For Agent data, evaluates the model's proficiency in utilizing tools during human-agent interactions. There are two evaluation metrics: **End-to-End Accuracy** (evaluated by comparing instance attributes with targets; 1 if all match exactly, 0 otherwise) and **Process Accuracy** (determined by consistency between actual and ideal function call processes, expressed as n/m where m represents the ideal process and n represents the degree of match).
 
 **Sample Command**:
 

@@ -223,22 +223,29 @@ def eval_acebench(cfg: Dict[str, Any]):
     
     for sample in samples:
         generation = sample.get("generation", sample.get("result", ""))
-        
-        # Try to infer test category from sample ID if not set
-        sample_category = test_category
+
+        # Infer test category from sample ID (prioritize over task type since task types mix categories)
+        sample_category = None
         sample_id = sample.get("id", "")
-        if not sample_category and sample_id:
-            # Infer from ID format
-            if "multi_turn" in sample_id:
-                sample_category = "normal_multi_turn"
-            elif "special" in sample_id:
+        if sample_id:
+            # Infer from ID format - sample IDs contain category info
+            sample_id_lower = sample_id.lower()
+            if "special" in sample_id_lower:
                 sample_category = "special"
-            elif "agent" in sample_id:
+            elif "agent" in sample_id_lower:
                 sample_category = "agent"
-            elif "atom" in sample_id:
-                sample_category = "normal_atom"
-            else:
-                sample_category = "normal"
+            elif "normal" in sample_id_lower:
+                # For normal, be more specific if possible
+                if "multi_turn" in sample_id_lower:
+                    sample_category = "normal_multi_turn"
+                elif "atom" in sample_id_lower:
+                    sample_category = "normal_atom"
+                else:
+                    sample_category = "normal"
+        
+        # Fallback to task type category if ID inference failed
+        if not sample_category:
+            sample_category = test_category
         
         eval_result = evaluate_single_sample(
             sample,
