@@ -219,10 +219,11 @@ class ACEBenchGenerationTask(GenerationTask):
                 if tools:
                     # Use function calling format
                     if self.cfg.prompt_format == "openai":
-                        # OpenAI format with tools
+                        # OpenAI format with tools - use 'prompt' key not 'messages'
                         response = await self.generate_with_semaphore(
-                            messages=messages,
+                            prompt=messages,
                             tools=tools,
+                            include_response=True,
                             **asdict(self.cfg.inference),
                         )
                     else:
@@ -251,7 +252,8 @@ class ACEBenchGenerationTask(GenerationTask):
                     # No tools, regular chat
                     if self.cfg.prompt_format == "openai":
                         response = await self.generate_with_semaphore(
-                            messages=messages,
+                            prompt=messages,
+                            include_response=True,
                             **asdict(self.cfg.inference),
                         )
                     else:
@@ -275,7 +277,35 @@ class ACEBenchGenerationTask(GenerationTask):
                 
                 # Parse response
                 if isinstance(response, dict):
-                    generation = response.get("generation", response.get("response", ""))
+                    # Check for tool_calls in the response (OpenAI format)
+                    if "response" in response and hasattr(response["response"], 'choices'):
+                        # OpenAI response object
+                        message = response["response"].choices[0].message
+                        tool_calls = message.tool_calls if hasattr(message, 'tool_calls') and message.tool_calls else None
+                        
+                        if tool_calls:
+                            # Format as ACEBench expects: [ApiName(key1='value1', ...)]
+                            func_calls = []
+                            for tc in tool_calls:
+                                func_name = tc.function.name
+                                try:
+                                    args = json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                                    arg_parts = []
+                                    for k, v in args.items():
+                                        if isinstance(v, str):
+                                            arg_parts.append(f"{k}='{v}'")
+                                        else:
+                                            arg_parts.append(f"{k}={repr(v)}")
+                                    arg_str = ', '.join(arg_parts)
+                                    func_calls.append(f"{func_name}({arg_str})")
+                                except:
+                                    func_calls.append(f"{func_name}()")
+                            generation = f"[{', '.join(func_calls)}]"
+                        else:
+                            # No tool calls, just text
+                            generation = message.content if hasattr(message, 'content') else ""
+                    else:
+                        generation = response.get("generation", response.get("response", ""))
                 else:
                     generation = str(response)
                 
