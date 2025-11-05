@@ -17,6 +17,7 @@ from pathlib import Path
 
 from nemo_skills.dataset.utils import import_from_path
 from nemo_skills.evaluation.metrics.aalcr_metrics import AALCRMetrics
+from nemo_skills.evaluation.metrics.acebench_metrics import ACEBenchMetrics
 from nemo_skills.evaluation.metrics.answer_judgement_metrics import AnswerJudgementMetrics
 from nemo_skills.evaluation.metrics.arena_metrics import ArenaMetrics
 from nemo_skills.evaluation.metrics.bfcl_metrics import BFCLMetrics
@@ -45,6 +46,7 @@ METRICS_MAP = {
     "lean4-statement": Lean4Metrics,
     "answer-judgement": AnswerJudgementMetrics,
     "arena": ArenaMetrics,
+    "acebench": ACEBenchMetrics,
     "bfcl": BFCLMetrics,
     "evalplus": EvalPlusMetrics,
     "if": IFMetrics,

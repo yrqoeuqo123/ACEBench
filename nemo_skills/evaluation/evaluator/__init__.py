@@ -16,6 +16,7 @@ import asyncio
 from typing import Any, Callable, Dict
 
 from nemo_skills.evaluation.evaluator.base import BaseEvaluator
+from nemo_skills.evaluation.evaluator.acebench import eval_acebench
 from nemo_skills.evaluation.evaluator.bfcl import eval_bfcl
 from nemo_skills.evaluation.evaluator.code import (
     CodeExecEvaluator,
@@ -40,6 +41,7 @@ from nemo_skills.evaluation.evaluator.scicode import eval_scicode
 
 EVALUATOR_MAP = {
     # Function-based evaluators (batch-only)
+    "acebench": eval_acebench,
     "evalplus": eval_evalplus,
     "if": eval_if,
     "ifbench": eval_ifbench,
