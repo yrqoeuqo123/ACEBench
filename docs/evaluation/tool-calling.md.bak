@@ -2,6 +2,85 @@
 
 ## Supported benchmarks
 
+## acebench
+
+ACEBench consists of four distinct evaluation task types that comprehensively test various aspects of agent capabilities through function calling: inference memory, instruction retention, reliable version editing, and self-coherence.
+
+- Benchmark is defined in [`nemo_skills/dataset/acebench/__init__.py`](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/__init__.py)
+- Original benchmark source is [here](https://github.com/ShishirPatil/agent_hard_benchmark/tree/main/ACEBench).
+
+### Data Preparation
+
+To prepare ACEBench data for evaluation:
+
+```bash
+ns prepare_data acebench
+```
+
+This command performs the following operations:
+
+- Loads ACEBench data from the source directory
+- Processes and organizes data into four task type folders
+- Creates standardized test files in JSONL format with ground truth annotations
+
+**Example output structure**:
+```
+nemo_skills/dataset/acebench/
+├── inference_memory/test.jsonl
+├── instruction_retention/test.jsonl
+├── reliable_version_editing/test.jsonl
+└── self_coherence/test.jsonl
+```
+
+### Challenges of tool-calling tasks
+
+There are three key steps in tool-calling which differentiate it from typical text-only tasks:
+
+1. **Tool Presentation**: Presenting the available tools to the LLM
+2. **Response Parsing**: Extracting and validating tool calls from model-generated text
+3. **Tool Execution**: Executing the tool calls and communicating the results back to the model
+
+For ACEBench, we use AST-based evaluation for response parsing and validation. Model outputs are parsed into Abstract Syntax Trees (ASTs) to extract function calls, which are then validated against function schemas with type checking and compared to ground truth using specialized checkers.
+
+#### AST-Based Evaluation (Default)
+
+**When to use**: All ACEBench evaluations
+
+**How it works**: Utilizes AST parsing and specialized checker functions to validate function calls. The evaluation supports three checker types:
+- **Normal Checker**: For standard single-turn and multi-turn function calls
+- **Special Checker**: For error handling and edge cases  
+- **Agent Checker**: For multi-step agent tasks with sequential function calls
+
+**Sample Command**:
+
+```bash hl_lines="9"
+ns eval \
+  --benchmarks acebench \
+  --cluster dfw \
+  --model /hf_models/Qwen3-4B \
+  --server_gpus 2 \
+  --server_type vllm \
+  --output_dir /workspace/qwen3-4b-acebench/ \
+  ++parse_reasoning=True \
+  ++inference.tokens_to_generate=8192
+```
+
+### Configuration Parameters
+
+| Configuration | Description |
+| ------------- | ----------- |
+| `++inference.tokens_to_generate` | Maximum tokens to generate (default: 8192) |
+| `++inference.temperature` | Generation temperature (typically 0.0 for deterministic evaluation) |
+| `++eval_config.model` | Model name for AST decoding (used for model-specific parsing if needed) |
+
+
+
+!!!note
+    To evaluate individual task types of `acebench`, such as `inference_memory`, use `benchmarks=acebench.inference_memory`.
+
+!!!note
+    Currently, ns summarize_results does not support benchmarks with custom aggregation requirements like ACEBench. To handle this, the evaluation pipeline automatically launches a dependent job that processes the individual task type scores using [our scoring script](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/acebench_score.py).
+
 ## bfcl_v3
 
 BFCL v3 consists of seventeen distinct evaluation subsets that comprehensively test various aspects of function calling capabilities, from simple function calls to complex multi-turn interactions.
@@ -138,83 +217,3 @@ ns eval \
 
 !!!note
     Currently, ns summarize_results does not support benchmarks with custom aggregation requirements like BFCL v3. To handle this, the evaluation pipeline automatically launches a dependent job that processes the individual subset scores using [our scoring script](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/bfcl_v3/bfcl_score.py).
-
-## acebench
-
-ACEBench consists of four distinct evaluation task types that comprehensively test various aspects of agent capabilities through function calling: inference memory, instruction retention, reliable version editing, and self-coherence.
-
-- Benchmark is defined in [`nemo_skills/dataset/acebench/__init__.py`](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/__init__.py)
-- Original benchmark source is [here](https://github.com/chenchen0103/ACEBench).
-
-### Data Preparation
-
-To prepare ACEBench data for evaluation:
-
-```bash
-ns prepare_data acebench
-```
-
-This command performs the following operations:
-
-- Loads ACEBench data from the source directory
-- Processes and organizes data into four task type folders
-- Creates standardized test files in JSONL format with ground truth annotations
-
-**Example output structure**:
-```
-nemo_skills/dataset/acebench/
-├── inference_memory/test.jsonl
-├── instruction_retention/test.jsonl
-├── reliable_version_editing/test.jsonl
-└── self_coherence/test.jsonl
-```
-
-### Challenges of tool-calling tasks
-
-There are three key steps in tool-calling which differentiate it from typical text-only tasks:
-
-1. **Tool Presentation**: Presenting the available tools to the LLM
-2. **Response Parsing**: Extracting and validating tool calls from model-generated text
-3. **Tool Execution**: Executing the tool calls and communicating the results back to the model
-
-For ACEBench, we use AST-based evaluation for response parsing and validation. Model outputs are parsed into Abstract Syntax Trees (ASTs) to extract function calls, which are then validated against function schemas with type checking and compared to ground truth using specialized checkers.
-
-#### AST-Based Evaluation (Default)
-
-**When to use**: All ACEBench evaluations
-
-**How it works**: Utilizes AST parsing and specialized checker functions to validate function calls. The evaluation supports three checker types:
-- **Normal Checker**: For standard single-turn and multi-turn function calls
-- **Special Checker**: For error handling and edge cases  
-- **Agent Checker**: For multi-step agent tasks with sequential function calls
-
-**Sample Command**:
-
-```bash hl_lines="9"
-ns eval \
-  --benchmarks acebench \
-  --cluster dfw \
-  --model /hf_models/Qwen3-4B \
-  --server_gpus 2 \
-  --server_type vllm \
-  --output_dir /workspace/qwen3-4b-acebench/ \
-  ++parse_reasoning=True \
-  ++inference.tokens_to_generate=8192
-```
-
-### Configuration Parameters
-
-| Configuration | Description |
-| ------------- | ----------- |
-| `++inference.tokens_to_generate` | Maximum tokens to generate (default: 8192) |
-| `++inference.temperature` | Generation temperature (typically 0.0 for deterministic evaluation) |
-| `++eval_config.model` | Model name for AST decoding (used for model-specific parsing if needed) |
-
-
-
-!!!note
-    To evaluate individual task types of `acebench`, such as `inference_memory`, use `benchmarks=acebench.inference_memory`.
-
-!!!note
-    Currently, ns summarize_results does not support benchmarks with custom aggregation requirements like ACEBench. To handle this, the evaluation pipeline automatically launches a dependent job that processes the individual task type scores using [our scoring script](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/acebench_score.py).
-
