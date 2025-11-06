@@ -12,20 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DATASET_GROUP = "tool"
-
-CATEGORIES = [
-    "normal",
-    "special",
-    "agent",
-]
-
-LANGUAGES = ["en", "zh"]
-
-SPLITS = [f"{category}_{lang}" for category in CATEGORIES for lang in LANGUAGES]
-
-IS_BENCHMARK_GROUP = True
-
-SCORE_MODULE = "nemo_skills.dataset.acebench.acebench_score"
-
-BENCHMARKS = {f"acebench.{split}": {} for split in SPLITS}
+"""
+Agent simulation infrastructure for ACEBench agent category.
+Provides multi-turn and multi-step simulation capabilities.
+"""

@@ -141,31 +141,42 @@ ns eval \
 
 ## acebench
 
-ACEBench categorizes data into three primary types based on evaluation methodology: **Normal**, **Special**, and **Agent**. These three categories comprehensively test various aspects of tool usage capabilities, from basic function calls to complex multi-turn interactions with imperfect instructions and real-world agent scenarios.
+ACEBench is a comprehensive benchmark for evaluating tool-calling capabilities in Large Language Models across both English and Chinese languages. It categorizes data into three primary types based on evaluation methodology: **Normal**, **Special**, and **Agent**. These categories comprehensively test various aspects of tool usage capabilities, from basic function calls to complex multi-turn interactions with imperfect instructions and real-world agent scenarios.
 
 - Benchmark is defined in [`nemo_skills/dataset/acebench/__init__.py`](https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/dataset/acebench/__init__.py)
 - Original benchmark source is [here](https://github.com/chenchen0103/ACEBench).
+- Supports both English and Chinese language evaluation
 
 ### Data Preparation
 
 To prepare ACEBench data for evaluation:
 
 ```bash
+# Prepare English data (default)
 ns prepare_data acebench
+
+# Prepare Chinese data
+ns prepare_data acebench --language zh
+
+# Prepare both languages
+ns prepare_data acebench --language both
 ```
 
 This command performs the following operations:
 
 - Loads ACEBench data from the source directory
-- Processes and organizes data into three category folders (normal, special, agent)
+- Processes and organizes data into category-language folders
 - Creates standardized test files in JSONL format with ground truth annotations
 
 **Example output structure**:
 ```
 nemo_skills/dataset/acebench/
-├── normal/test.jsonl
-├── special/test.jsonl
-└── agent/test.jsonl
+├── normal_en/test.jsonl
+├── normal_zh/test.jsonl
+├── special_en/test.jsonl
+├── special_zh/test.jsonl
+├── agent_en/test.jsonl
+└── agent_zh/test.jsonl
 ```
 
 The data is organized across three primary categories:

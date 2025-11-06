@@ -24,8 +24,6 @@ from nemo_skills.utils import get_logger_name
 
 LOG = logging.getLogger(get_logger_name(__file__))
 
-# Mapping of ACEBench data files to categories
-# Based on the ACE_DATA_CATEGORY structure from agent_hard_benchmark/ACEBench
 CATEGORY_MAPPING = {
     "normal": [
         "data_normal_single_turn_single_function",
@@ -62,16 +60,13 @@ GENERATION_MODULE = "nemo_skills.inference.eval.acebench"
 
 def find_acebench_source_dir() -> Path:
     """Find the ACEBench source directory in agent_hard_benchmark."""
-    # Try to find it relative to this file
     current_dir = Path(__file__).parent.absolute()
-    # Navigate up to workspace root
     workspace_root = current_dir
     for _ in range(5):
         workspace_root = workspace_root.parent
         acebench_path = workspace_root / "agent_hard_benchmark" / "ACEBench"
         if acebench_path.exists():
             return acebench_path
-    # Fallback: check common locations
     for base in [Path.home(), Path("/")]:
         acebench_path = base / "agent_hard_benchmark" / "ACEBench"
         if acebench_path.exists():
@@ -96,25 +91,29 @@ def process_category(
     category: str,
     source_dir: Path,
     output_dir: Path,
+    language: str = "en",
     seed: Optional[int] = None,
 ):
-    """Process all data files for a given category and create test.jsonl."""
-    category_output_dir = output_dir / category
+    """Process all data files for a given category, language and create test.jsonl."""
+    if language == "both":
+        for lang in ["en", "zh"]:
+            process_category(category, source_dir, output_dir, language=lang, seed=seed)
+        return
+    
+    category_output_dir = output_dir / f"{category}_{language}"
     category_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get the list of data files for this category
     data_files = CATEGORY_MAPPING.get(category, [])
     if not data_files:
         LOG.warning(f"No data files mapped for category: {category}")
         return
 
-    # Load questions from all data files for this category
     all_questions = []
-    data_en_dir = source_dir / "data_all" / "data_en"
-    possible_answers_dir = data_en_dir / "possible_answer"
+    data_lang_dir = source_dir / "data_all" / f"data_{language}"
+    possible_answers_dir = data_lang_dir / "possible_answer"
 
     for data_file_base in data_files:
-        data_file = data_en_dir / f"{data_file_base}.json"
+        data_file = data_lang_dir / f"{data_file_base}.json"
         if not data_file.exists():
             LOG.warning(f"Data file not found: {data_file}")
             continue
@@ -122,7 +121,6 @@ def process_category(
         questions = load_question_file(data_file)
         LOG.info(f"Loaded {len(questions)} questions from {data_file.name}")
 
-        # Load ground truth if available
         ground_truth_file = possible_answers_dir / f"{data_file_base}.json"
         ground_truths = {}
         if ground_truth_file.exists():
@@ -133,21 +131,18 @@ def process_category(
                         if "id" in gt:
                             ground_truths[gt["id"]] = gt.get("ground_truth", [])
 
-        # Add ground truth to questions
         for q in questions:
             q_id = q.get("id", "")
             if q_id in ground_truths:
                 q["ground_truth"] = ground_truths[q_id]
-            # Preserve original field names from AgentHard
-            # The fields we need: id, question, function, time, profile, initial_config, path, involved_classes
+            q["language"] = language
 
         all_questions.extend(questions)
 
     if not all_questions:
-        LOG.warning(f"No questions found for category: {category}")
+        LOG.warning(f"No questions found for category: {category} ({language})")
         return
 
-    # Write to test.jsonl
     output_file = category_output_dir / "test.jsonl"
     with open(output_file, "w", encoding="utf-8") as f:
         for q in all_questions:
@@ -155,7 +150,6 @@ def process_category(
 
     LOG.info(f"Wrote {len(all_questions)} questions to {output_file}")
 
-    # Write __init__.py
     init_file = category_output_dir / "__init__.py"
     with open(init_file, "w", encoding="utf-8") as f:
         f.write(DEFAULT_SETTINGS)
@@ -166,14 +160,12 @@ def main(args):
     source_dir = find_acebench_source_dir()
     LOG.info(f"Using ACEBench source directory: {source_dir}")
 
-    # Output directory is the acebench dataset directory
     output_dir = Path(__file__).parent
 
-    # Process each category
     categories = CATEGORY_MAPPING.keys()
     for category in categories:
-        LOG.info(f"Processing category: {category}")
-        process_category(category, source_dir, output_dir, seed=args.seed)
+        LOG.info(f"Processing category: {category} (language: {args.language})")
+        process_category(category, source_dir, output_dir, language=args.language, seed=args.seed)
 
     LOG.info("ACEBench dataset preparation completed")
 
@@ -185,6 +177,13 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Random seed for shuffling (if needed)",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default="en",
+        choices=["en", "zh", "both"],
+        help="Language to process: 'en' for English, 'zh' for Chinese, 'both' for both languages",
     )
     args = parser.parse_args()
 

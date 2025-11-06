@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import hydra
-from transformers import AutoTokenizer
 
 from nemo_skills.inference.generate import (
     GenerateSolutionsConfig,
@@ -55,6 +54,9 @@ class ACEBenchGenerationConfig(GenerateSolutionsConfig):
 
     # Number of attempts for generation (for best-of-N sampling)
     attempts: int = 1
+    
+    # Language for prompts ("en" for English, "zh" for Chinese)
+    language: str = "en"
 
     def _post_init_validate_params(self):
         """Validate that certain parameters are restricted to certain values"""
@@ -79,16 +81,46 @@ cs = hydra.core.config_store.ConfigStore.instance()
 cs.store(name="base_acebench_generation_config", node=ACEBenchGenerationConfig)
 
 
+def normalize_schema(schema: Dict) -> Dict:
+    """Normalize ACEBench schema to be OpenAI-compatible."""
+    if not isinstance(schema, dict):
+        return schema
+    
+    normalized = {}
+    for key, value in schema.items():
+        if key == "type" and value == "dict":
+            # OpenAI requires 'object' not 'dict'
+            normalized[key] = "object"
+        elif isinstance(value, dict):
+            # Recursively normalize nested schemas
+            normalized[key] = normalize_schema(value)
+        elif isinstance(value, list):
+            # Normalize list items if they're dicts
+            normalized[key] = [normalize_schema(item) if isinstance(item, dict) else item for item in value]
+        else:
+            normalized[key] = value
+    
+    return normalized
+
+
 def convert_functions_to_tools(functions: List[Dict]) -> List[Dict]:
     """Convert ACEBench function format to OpenAI tools format."""
     tools = []
     for func in functions:
+        # Normalize function name (max 64 chars for OpenAI)
+        func_name = func.get("name", "")
+        if len(func_name) > 64:
+            func_name = func_name[:64]
+        
+        # Normalize parameters schema
+        parameters = normalize_schema(func.get("parameters", {}))
+        
         tool = {
             "type": "function",
             "function": {
-                "name": func.get("name", ""),
+                "name": func_name,
                 "description": func.get("description", ""),
-                "parameters": func.get("parameters", {}),
+                "parameters": parameters,
             },
         }
         tools.append(tool)
@@ -97,53 +129,81 @@ def convert_functions_to_tools(functions: List[Dict]) -> List[Dict]:
 
 def format_acebench_messages(
     data_point: Dict[str, Any],
-    hf_tokenizer: Optional[Any] = None,
-) -> List[Dict[str, Any]]:
+    use_text_format: bool = True,
+    language: str = "en",
+) -> tuple[List[Dict[str, Any]], Optional[List[Dict]]]:
     """
     Format ACEBench data point into chat messages.
     
-    ACEBench data contains:
-    - question: user query/conversation history
-    - function: available functions
-    - agent_system_prompt: system prompt for the agent (optional, from loader)
-    - previous_conversation_history: previous conversation (optional)
-    - user_system_prompt: system prompt for user simulation (optional, for agent tasks)
+    Args:
+        data_point: Data point containing question, functions, etc.
+        use_text_format: Whether to use text-based format (True) or OpenAI tools format (False)
+        language: Language for prompts ("en" or "zh")
+    
+    Returns:
+        tuple: (messages, tools) where tools is None for text format
     """
-    messages = []
+    from nemo_skills.inference.eval.acebench_prompts import get_system_prompt, get_user_prompt
     
-    # Add system prompt if available (from processed data)
-    if "agent_system_prompt" in data_point and data_point["agent_system_prompt"]:
-        messages.append({
-            "role": "system",
-            "content": data_point["agent_system_prompt"],
-        })
-    
-    # Add conversation history if available
-    if "previous_conversation_history" in data_point and data_point["previous_conversation_history"]:
-        # Parse conversation history if it's a string, otherwise use as-is
-        history = data_point["previous_conversation_history"]
-        if isinstance(history, str):
-            # Try to parse if it's JSON, otherwise treat as plain text
-            try:
-                history_obj = json.loads(history)
-                if isinstance(history_obj, list):
-                    messages.extend(history_obj)
-                else:
-                    messages.append({"role": "user", "content": history})
-            except json.JSONDecodeError:
-                messages.append({"role": "user", "content": history})
-        elif isinstance(history, list):
-            messages.extend(history)
-    
-    # Add the current question/user input
     question = data_point.get("question", "")
-    if question:
-        # Question might include "user: " prefix
-        if question.startswith("user: "):
-            question = question[6:].strip()
-        messages.append({"role": "user", "content": question})
+    functions = data_point.get("function", [])
+    time = data_point.get("time", "")
+    profile = data_point.get("profile", {})
+    sample_id = data_point.get("id", "")
     
-    return messages
+    # Determine category from ID
+    category = ""
+    if sample_id:
+        sample_id_lower = sample_id.lower()
+        if "special" in sample_id_lower:
+            category = "special"
+        elif "agent" in sample_id_lower:
+            category = "agent"
+        elif "preference" in sample_id_lower:
+            category = "preference"
+        else:
+            category = "normal"
+    
+    if use_text_format:
+        system_prompt = get_system_prompt(category, functions, time=time, profile=profile, language=language)
+        user_prompt = get_user_prompt(question, language=language)
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        
+        return messages, None  # No tools for text format
+    
+    else:
+        # OpenAI tools format (original approach)
+        messages = []
+        
+        # Add conversation history if available
+        if "previous_conversation_history" in data_point and data_point["previous_conversation_history"]:
+            history = data_point["previous_conversation_history"]
+            if isinstance(history, str):
+                try:
+                    history_obj = json.loads(history)
+                    if isinstance(history_obj, list):
+                        messages.extend(history_obj)
+                    else:
+                        messages.append({"role": "user", "content": history})
+                except json.JSONDecodeError:
+                    messages.append({"role": "user", "content": history})
+            elif isinstance(history, list):
+                messages.extend(history)
+        
+        # Add the current question/user input
+        if question:
+            if question.startswith("user: "):
+                question = question[6:].strip()
+            messages.append({"role": "user", "content": question})
+        
+        # Convert functions to tools
+        tools = convert_functions_to_tools(functions) if functions else None
+        
+        return messages, tools
 
 
 class ACEBenchGenerationTask(GenerationTask):
@@ -153,7 +213,12 @@ class ACEBenchGenerationTask(GenerationTask):
         super().__init__(cfg)
         # Set up tokenizer for prompt formatting if needed
         if cfg.tokenizer:
-            self.hf_tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer)
+            try:
+                from transformers import AutoTokenizer
+                self.hf_tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer)
+            except (ImportError, OSError) as e:
+                LOG.warning(f"Could not load tokenizer: {e}")
+                self.hf_tokenizer = None
         else:
             self.hf_tokenizer = None
 
@@ -181,13 +246,109 @@ class ACEBenchGenerationTask(GenerationTask):
     def setup_prompt(self):
         return None
 
+    async def process_agent_datapoint(self, data_point, language):
+        """Process agent task using integrated simulation infrastructure."""
+        import asyncio
+        import os
+        import time
+        
+        # Start timing
+        start_time = time.time()
+        
+        def run_agent_simulation():
+            try:
+                from nemo_skills.inference.eval.agent_simulation.apimodel_inference import APIModelInference
+                
+                # Set environment variables for agent simulation
+                os.environ["GPT_API_KEY"] = self.cfg.server.get("api_key", "")
+                os.environ["GPT_AGENT_API_KEY"] = self.cfg.server.get("api_key", "")
+                os.environ["GPT_BASE_URL"] = self.cfg.server.get("base_url", "")
+                
+                # Get full model name (keep openai/ prefix for server compatibility)
+                model_name = self.cfg.server.get("model", "")
+                
+                LOG.info(f"Running agent simulation for {data_point.get('id', '')} with model {model_name}")
+                
+                # Create agent
+                agent = APIModelInference(
+                    model_name=model_name,
+                    temperature=float(self.cfg.inference.temperature),
+                    top_p=float(self.cfg.inference.top_p),
+                    max_tokens=int(self.cfg.inference.tokens_to_generate or 8192),
+                    max_dialog_turns=40,
+                    user_model=model_name,
+                    language=language,
+                )
+                
+                # Run agent inference
+                result = agent.inference(
+                    question=data_point.get("question", ""),
+                    functions=data_point.get("function", []),
+                    time=data_point.get("time", ""),
+                    profile=data_point.get("profile", {}),
+                    test_case=data_point,
+                    id=data_point.get("id", ""),
+                )
+                
+                LOG.info(f"Agent simulation completed for {data_point.get('id', '')}")
+                return result
+                
+            except Exception as e:
+                LOG.error(f"Agent simulation error: {e}")
+                import traceback
+                LOG.error(traceback.format_exc())
+                raise
+        
+        try:
+            # Run synchronous agent simulation in thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, run_agent_simulation)
+            
+            end_time = time.time()
+            
+            # Format result for NeMo-Skills pipeline
+            return_dict = {
+                "generation_start_time": start_time,
+                "generation_end_time": end_time,
+                "generation_time": end_time - start_time,
+            }
+            
+            if isinstance(result, tuple) and len(result) == 2:
+                final_states, process_list = result
+                # Agent tasks return final class states
+                return_dict["result"] = final_states
+                return_dict["process"] = process_list
+                # Convert to string for generation field (required by pipeline)
+                return_dict["generation"] = json.dumps(final_states, ensure_ascii=False)
+            else:
+                # Fallback
+                return_dict["result"] = result
+                return_dict["process"] = []
+                return_dict["generation"] = str(result) if result else ""
+            
+            LOG.info(f"Agent result formatted: generation length = {len(return_dict.get('generation', ''))}")
+            return return_dict
+            
+        except Exception as e:
+            LOG.error(f"Failed to process agent task: {e}")
+            import traceback
+            LOG.error(traceback.format_exc())
+            # Return empty generation to avoid breaking pipeline
+            return {
+                "generation": "",
+                "error": str(e),
+            }
+
     async def process_single_datapoint(self, data_point, all_data):
         """Process a single ACEBench data point."""
-        functions = data_point.get("function", [])
-        tools = convert_functions_to_tools(functions) if functions else None
+        # Determine language from data point or use config default
+        language = data_point.get("language", self.cfg.language)
         
-        # Format messages
-        messages = format_acebench_messages(data_point, self.hf_tokenizer)
+        # Check if this is an agent task
+        if 'initial_config' in data_point and 'involved_classes' in data_point:
+            return await self.process_agent_datapoint(data_point, language)
+        
+        messages, tools = format_acebench_messages(data_point, use_text_format=True, language=language)
         
         # Add system message if configured
         if self.cfg.system_message:
@@ -215,65 +376,33 @@ class ACEBenchGenerationTask(GenerationTask):
         best_response = None
         for attempt in range(self.cfg.attempts):
             try:
-                # Generate response
-                if tools:
-                    # Use function calling format
-                    if self.cfg.prompt_format == "openai":
-                        # OpenAI format with tools - use 'prompt' key not 'messages'
-                        response = await self.generate_with_semaphore(
-                            prompt=messages,
-                            tools=tools,
-                            include_response=True,
-                            **asdict(self.cfg.inference),
-                        )
-                    else:
-                        # Nemo-Skills format - format prompt with tokenizer
-                        if self.hf_tokenizer:
-                            prompt = self.hf_tokenizer.apply_chat_template(
-                                messages,
-                                tools=tools,
-                                tokenize=False,
-                                add_generation_prompt=True,
-                                **self.cfg.chat_template_kwargs,
-                            )
-                            response = await self.generate_with_semaphore(
-                                prompt=prompt,
-                                endpoint_type=EndpointType.text,
-                                **asdict(self.cfg.inference),
-                            )
-                        else:
-                            # Fallback to OpenAI format
-                            response = await self.generate_with_semaphore(
-                                messages=messages,
-                                tools=tools,
-                                **asdict(self.cfg.inference),
-                            )
+                # Generate response using text-based chat
+                if self.cfg.prompt_format == "openai":
+                    # Use prompt parameter for OpenAI
+                    response = await self.generate_with_semaphore(
+                        prompt=messages,
+                        include_response=True,
+                        **asdict(self.cfg.inference),
+                    )
                 else:
-                    # No tools, regular chat
-                    if self.cfg.prompt_format == "openai":
+                    if self.hf_tokenizer:
+                        prompt = self.hf_tokenizer.apply_chat_template(
+                            messages,
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            **self.cfg.chat_template_kwargs,
+                        )
+                        response = await self.generate_with_semaphore(
+                            prompt=prompt,
+                            endpoint_type=EndpointType.text,
+                            **asdict(self.cfg.inference),
+                        )
+                    else:
                         response = await self.generate_with_semaphore(
                             prompt=messages,
                             include_response=True,
                             **asdict(self.cfg.inference),
                         )
-                    else:
-                        if self.hf_tokenizer:
-                            prompt = self.hf_tokenizer.apply_chat_template(
-                                messages,
-                                tokenize=False,
-                                add_generation_prompt=True,
-                                **self.cfg.chat_template_kwargs,
-                            )
-                            response = await self.generate_with_semaphore(
-                                prompt=prompt,
-                                endpoint_type=EndpointType.text,
-                                **asdict(self.cfg.inference),
-                            )
-                        else:
-                            response = await self.generate_with_semaphore(
-                                messages=messages,
-                                **asdict(self.cfg.inference),
-                            )
                 
                 # Parse response
                 if isinstance(response, dict):
